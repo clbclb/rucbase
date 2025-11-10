@@ -218,6 +218,7 @@ TEST_F(BufferPoolManagerTest, MultipleFilesTest) {
 
             PageId tmp_page_id = {.fd = fd, .page_no = INVALID_PAGE_ID};
             Page *page = buffer_pool_manager->new_page(&tmp_page_id);  // pin the page
+            EXPECT_NE(page, nullptr);
             int page_no = tmp_page_id.page_no;
             EXPECT_EQ(page_no, i);
 
@@ -279,12 +280,12 @@ TEST_F(BufferPoolManagerTest, MultipleFilesTest) {
         EXPECT_EQ(unpin_flag, true);
     }
 
-    // close and destroy files
+    // // close and destroy files
     for (auto &entry : fd2name) {
         int fd = entry.first;
         disk_manager_->close_file(fd);
-        // auto &filename = entry.second;
-        // disk_manager_->destroy_file(filename);
+        auto &filename = entry.second;
+        disk_manager_->destroy_file(filename);
     }
 }
 
@@ -384,8 +385,8 @@ TEST_F(BufferPoolManagerTest, ConcurrencyTest) {
                         EXPECT_EQ(true, bpm->unpin_page(page_ids[j], false));
                     } else {
                         EXPECT_EQ(0, std::strcmp((std::string("Hard") + std::to_string(page_ids[j].page_no)).c_str(),
-                                                 (page->get_data())));
-                        EXPECT_EQ(true, bpm->unpin_page(page_ids[j], false));
+                                                 (page->get_data()))); //wa
+                        EXPECT_EQ(true, bpm->unpin_page(page_ids[j], false)); //wa
                     }
                     j = (j + 1);
 
