@@ -49,14 +49,14 @@ void check_equal(const RmFileHandle *file_handle,
         assert(rm_exist == mock_exist);
     }
     // Test RM scan
-    // size_t num_records = 0;
-    // for (RmScan scan(file_handle); !scan.is_end(); scan.next()) {
-    //     assert(mock.count(scan.rid()) > 0);
-    //     auto rec = file_handle->get_record(scan.rid(), context);
-    //     assert(memcmp(rec->data, mock.at(scan.rid()).c_str(), file_handle->file_hdr_.record_size) == 0);
-    //     num_records++;
-    // }
-    // assert(num_records == mock.size());
+    size_t num_records = 0;
+    for (RmScan scan(file_handle); !scan.is_end(); scan.next()) {
+        assert(mock.count(scan.rid()) > 0);
+        auto rec = file_handle->get_record(scan.rid(), context);
+        assert(memcmp(rec->data, mock.at(scan.rid()).c_str(), file_handle->file_hdr_.record_size) == 0);
+        num_records++;
+    }
+    assert(num_records == mock.size());
 }
 
 // std::cout can call this, for example: std::cout << rid
