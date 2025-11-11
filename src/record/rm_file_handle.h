@@ -50,6 +50,7 @@ class RmFileHandle {
     BufferPoolManager *buffer_pool_manager_;
     int fd_;        // 打开文件后产生的文件句柄
     RmFileHdr file_hdr_;    // 文件头，维护当前表文件的元数据
+    int last_page_no; //自己定义，用于记录page_no
 
    public:
     RmFileHandle(DiskManager *disk_manager, BufferPoolManager *buffer_pool_manager, int fd)
@@ -89,4 +90,5 @@ class RmFileHandle {
     RmPageHandle create_page_handle();
 
     void release_page_handle(RmPageHandle &page_handle);
+    page_id_t first_free_page();
 };
