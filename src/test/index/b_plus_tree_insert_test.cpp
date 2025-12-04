@@ -334,7 +334,6 @@ TEST_F(BPlusTreeTests, InsertTest) {
 
         // Draw(buffer_pool_manager_.get(), "insert" + std::to_string(key) + ".dot");
     }
-
     std::vector<Rid> rids;
     for (auto key : keys) {
         rids.clear();
@@ -346,7 +345,7 @@ TEST_F(BPlusTreeTests, InsertTest) {
         EXPECT_EQ(rids[0].slot_no, value);
     }
 
-    // 找不到未插入的数据
+    // // 找不到未插入的数据
     for (int key = scale + 1; key <= scale + 100; key++) {
         rids.clear();
         index_key = (const char *)&key;
@@ -375,14 +374,18 @@ TEST_F(BPlusTreeTests, LargeScaleTest) {
     // randomized the insertion order
     auto rng = std::default_random_engine{};
     std::shuffle(keys.begin(), keys.end(), rng);
-
     const char *index_key;
+    // std::cout << "-------------\n";
     for (auto key : keys) {
         int32_t value = key & 0xFFFFFFFF;  // key的低32位
         Rid rid = {.page_no = static_cast<int32_t>(key >> 32),
                    .slot_no = value};  // page_id = (key>>32), slot_num = (key & 0xFFFFFFFF)
         index_key = (const char *)&key;
+        // std::cout << "1\n";
         bool insert_ret = ih_->insert_entry(index_key, rid, txn_.get());  // 调用Insert
+        // std::cout << "2\n";
+        
+        // std::cout << ih_->file_hdr_->num_pages_ << ' ' << ih_->file_hdr_->root_page_ << '\n';
         ASSERT_EQ(insert_ret, true);
     }
 

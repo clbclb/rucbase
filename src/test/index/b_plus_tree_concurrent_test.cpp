@@ -334,7 +334,7 @@ int getThreadId() {
 }
 
 // helper function to insert
-void InsertHelper(IxIndexHandle *tree, const std::vector<int64_t> &keys,
+ void InsertHelper(IxIndexHandle *tree, const std::vector<int64_t> &keys,
                   __attribute__((unused)) uint64_t thread_itr = 0) {
     // create transaction
     Transaction *transaction = new Transaction(0);  // 注意，每个线程都有一个事务；不能从上层传入一个共用的事务

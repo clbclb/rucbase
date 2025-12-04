@@ -323,19 +323,21 @@ TEST_F(BPlusTreeTests, InsertAndDeleteTest1) {
         keys.push_back(key);
     }
 
-    // insert keys
+    // // insert keys
     const char *index_key;
     for (auto key : keys) {
         int32_t value = key & 0xFFFFFFFF;  // key的低32位
         Rid rid = {.page_no = static_cast<int32_t>(key >> 32),
                    .slot_no = value};  // page_id = (key>>32), slot_num = (key & 0xFFFFFFFF)
         index_key = (const char *)&key;
+        // std::cout << *(int *)index_key << '\n';
         bool insert_ret = ih_->insert_entry(index_key, rid, txn_.get());  // 调用Insert
         ASSERT_EQ(insert_ret, true);
     }
-    Draw(buffer_pool_manager_.get(), "insert10.dot");
+    // std::cout << "key--------\n";
+    // Draw(buffer_pool_manager_.get(), "insert10.dot");
 
-    // scan keys by GetValue()
+    // // scan keys by GetValue()
     std::vector<Rid> rids;
     for (auto key : keys) {
         rids.clear();
@@ -347,20 +349,22 @@ TEST_F(BPlusTreeTests, InsertAndDeleteTest1) {
         EXPECT_EQ(rids[0].slot_no, value);
     }
 
-    // delete keys
+    // // delete keys
     std::vector<int64_t> delete_keys;
     for (int64_t key = 1; key <= delete_scale; key++) {  // 1~9
         delete_keys.push_back(key);
     }
     for (auto key : delete_keys) {
         index_key = (const char *)&key;
+        // std::cout << "1\n";
         bool delete_ret = ih_->delete_entry(index_key, txn_.get());  // 调用Delete
+        // std::cout << "2\n";
         ASSERT_EQ(delete_ret, true);
 
         // Draw(buffer_pool_manager_.get(), "InsertAndDeleteTest1_delete" + std::to_string(key) + ".dot");
     }
 
-    // scan keys by Ixscan
+    // // scan keys by Ixscan
     int64_t start_key = *delete_keys.rbegin() + 1;
     int64_t current_key = start_key;
     int64_t size = 0;

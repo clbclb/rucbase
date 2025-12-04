@@ -85,7 +85,22 @@ void SmManager::drop_db(const std::string& db_name) {
  * @param {string&} db_name 数据库名称，与文件夹同名
  */
 void SmManager::open_db(const std::string& db_name) {
-    
+    /*
+    TODO:
+    这里还理解的不够清楚，先只加载数据库的文件
+    */
+    if (!is_dir(db_name)) {
+        throw DatabaseExistsError(db_name);
+    }
+    if (chdir(db_name.c_str()) < 0) {
+        throw UnixError();
+    }
+    std::ifstream ifs(DB_META_NAME);
+    ifs >> db_;
+
+    if (chdir("..") < 0) {
+        throw UnixError();
+    }
 }
 
 /**
@@ -101,7 +116,18 @@ void SmManager::flush_meta() {
  * @description: 关闭数据库并把数据落盘
  */
 void SmManager::close_db() {
-    
+    std::string db_name = db_.name_;
+    if (!is_dir(db_name)) {
+        throw DatabaseExistsError(db_name);
+    }
+    if (chdir(db_name.c_str()) < 0) {
+        throw UnixError();
+    }
+    std::ofstream ofs(DB_META_NAME);
+    ofs << db_;
+    if (chdir("..") < 0) {
+        throw UnixError();
+    }
 }
 
 /**
@@ -198,7 +224,16 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
  * @param {Context*} context
  */
 void SmManager::create_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    
+    TabMeta info = db_.get_table(tab_name);
+    std::vector<ColMeta> index_cols;
+
+    for (auto col_name : col_names) {
+        auto col_meta = info.get_col(col_name);
+        index_cols.push_back(*col_meta);
+    }
+    ix_manager_->create_index(tab_name, index_cols);
+
+    // ihs_.insert({index_name, ix_manager_->open_index(index_name, col_names)});
 }
 
 /**

@@ -141,7 +141,10 @@ bool BufferPoolManager::unpin_page(PageId page_id, bool is_dirty) {
     }
 
     // 3 根据参数is_dirty，更改P的is_dirty_
-    pages_[frame_id].is_dirty_ = is_dirty;
+    // pages_[frame_id].is_dirty_ = is_dirty;
+    if (is_dirty) {
+        pages_[frame_id].is_dirty_ = true;
+    }
 
     return true;
 }
