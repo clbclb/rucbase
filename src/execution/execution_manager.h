@@ -25,6 +25,7 @@ See the Mulan PSL v2 for more details. */
 #include "executor_abstract.h"
 #include "transaction/transaction_manager.h"
 
+const bool ex_manager_debug = false;
 
 class QlManager {
    private:

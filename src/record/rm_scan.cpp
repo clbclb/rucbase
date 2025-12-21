@@ -28,6 +28,7 @@ RmScan::RmScan(const RmFileHandle *file_handle) : file_handle_(file_handle) {
             }
         }
     }
+    rid_ = {-1, -1};
 }
 
 /**
@@ -60,10 +61,7 @@ void RmScan::next() {
  */
 bool RmScan::is_end() const {
     // Todo: 修改返回值
-    if (rid_.page_no == -1) {
-        return true;
-    }
-    return false;
+   return rid_.page_no == -1;
 }
 
 /**

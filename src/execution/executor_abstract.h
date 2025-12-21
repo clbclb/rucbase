@@ -30,7 +30,7 @@ class AbstractExecutor {
         return *_cols;
     };
 
-    virtual std::string getType() { return "AbstractExecutor"; };
+    virtual std::string getType() { return "AbstractExecutor"; }; //have added to all
 
     virtual void beginTuple(){};
 
@@ -52,5 +52,82 @@ class AbstractExecutor {
             throw ColumnNotFoundError(target.tab_name + '.' + target.col_name);
         }
         return pos;
+    }
+
+    int ex_compare(const char *a, const char *b, ColType type, int col_len) {
+        switch (type) {
+            case TYPE_INT: {
+                int ia; memcpy(&ia, a, sizeof(int)); //这里没有确定是不是对齐的
+                int ib; memcpy(&ib, b, sizeof(int));
+                return (ia < ib) ? -1 : ((ia > ib) ? 1 : 0);
+            }
+            case TYPE_FLOAT: {
+                float fa; memcpy(&fa, a, sizeof(float));
+                float fb; memcpy(&fb, b, sizeof(float));
+                return (fa < fb) ? -1 : ((fa > fb) ? 1 : 0);
+            }
+            case TYPE_STRING:
+                return memcmp(a, b, col_len);
+            default:
+                throw InternalError("Unexpected data type");
+        }
+    }
+
+
+    bool satisfy(std::unique_ptr<RmRecord> rec, std::vector<ColMeta> &cols, std::vector<Condition> &conds) {
+        for (auto cond : conds) {
+            auto it = get_col(cols, cond.lhs_col);
+            ColType type = (*it).type;
+            char *a = rec->data + (*it).offset;
+            char *b;
+            if (cond.is_rhs_val) {
+                switch(cond.rhs_val.type) {
+                    case ColType::TYPE_INT :
+                        b = reinterpret_cast<char*>(&cond.rhs_val.int_val);
+                        break;
+                    case ColType::TYPE_FLOAT :
+                        b = reinterpret_cast<char*>(&cond.rhs_val.float_val);
+                        break;
+                    case ColType::TYPE_STRING :
+                        b = cond.rhs_val.str_val.data();
+                        break;
+                }
+            }
+            else {
+                b = rec->data + (*get_col(cols, cond.rhs_col)).offset;
+            }
+            int cmp = ex_compare(a, b, type, (*it).len);
+            bool ok;
+            switch (cond.op) {
+                case CompOp::OP_EQ :
+                    ok = cmp == 0;
+                    break;
+                case CompOp::OP_GE :
+                    ok = cmp >= 0;
+                    break;
+                case CompOp::OP_GT :
+                    ok = cmp == 1;
+                    break;
+                case CompOp::OP_LE :
+                    ok = cmp <= 0;
+                    break;
+                case CompOp::OP_LT :
+                    ok = cmp == -1;
+                    break;
+                case CompOp::OP_NE :
+                    ok = cmp != 0;
+                    break;
+            }
+            if (!ok) return false;
+        }
+        return true;
+    }
+
+    void fill_buf(IndexMeta &index, char *rec, char *buf) {
+        int offset = 0;
+        for (auto &col : index.cols) {
+            memcpy(buf + offset, rec + col.offset, col.len);
+            offset += col.len;
+        }
     }
 };

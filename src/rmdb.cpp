@@ -291,6 +291,7 @@ int main(int argc, char **argv) {
         }
         // Open database
         sm_manager->open_db(db_name);
+        
 
         // recovery database
         recovery->analyze();

@@ -45,12 +45,27 @@ class SeqScanExecutor : public AbstractExecutor {
         fed_conds_ = conds_;
     }
 
+    ~SeqScanExecutor() override {}
+
+    std::string getType() override { return "SeqScanExecutor"; };
+
+    size_t tupleLen() const override { return len_; }
+
+    const std::vector<ColMeta> &cols() const override { return cols_; };
+
+    bool is_end() const override {
+        return scan_->is_end();
+    }
+
     /**
      * @brief 构建表迭代器scan_,并开始迭代扫描,直到扫描到第一个满足谓词条件的元组停止,并赋值给rid_
      *
      */
     void beginTuple() override {
-        
+        scan_ = std::make_unique<RmScan>(fh_);
+        if (!is_end() && !satisfy(Next(), cols_, conds_)) {
+            nextTuple();
+        }
     }
 
     /**
@@ -58,7 +73,10 @@ class SeqScanExecutor : public AbstractExecutor {
      *
      */
     void nextTuple() override {
-        
+        scan_->next();
+        while (!is_end() && !satisfy(Next(), cols_, conds_)) {
+            scan_->next();
+        }
     }
 
     /**
@@ -67,8 +85,11 @@ class SeqScanExecutor : public AbstractExecutor {
      * @return std::unique_ptr<RmRecord>
      */
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        Rid rid = scan_->rid();
+        return fh_->get_record(rid, context_);
     }
 
-    Rid &rid() override { return rid_; }
+    Rid &rid() override { _abstract_rid = scan_->rid(); return _abstract_rid; }
+
+    ColMeta get_col_offset(const TabCol &target) override { return *get_col(cols_, target);};
 };

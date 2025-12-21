@@ -35,8 +35,22 @@ class DeleteExecutor : public AbstractExecutor {
         rids_ = rids;
         context_ = context;
     }
+    std::string getType() override { return "DeleteExecutor"; };
 
     std::unique_ptr<RmRecord> Next() override {
+        auto buf = std::make_unique<char[]>(fh_->get_record_size());
+        for (auto rid : rids_) {
+            auto ori_rec = *fh_->get_record(rid, context_);
+
+            fh_->delete_record(rid, context_);
+
+            //更新索引
+            for (auto &index : tab_.indexes) {
+                auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
+                fill_buf(index, ori_rec.data, buf.get());
+                ih->delete_entry(buf.get(), nullptr);
+            }
+        }
         return nullptr;
     }
 

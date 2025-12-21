@@ -95,11 +95,20 @@ void SmManager::open_db(const std::string& db_name) {
     if (chdir(db_name.c_str()) < 0) {
         throw UnixError();
     }
+    
+    db_.name_.clear();
+    db_.tabs_.clear();
+    fhs_.clear();
+    ihs_.clear();
+
     std::ifstream ifs(DB_META_NAME);
     ifs >> db_;
 
-    if (chdir("..") < 0) {
-        throw UnixError();
+    for (auto [tab_name, tab_meta] : db_.tabs_) {
+        fhs_[tab_name] = rm_manager_->open_file(tab_name);
+        for (auto index_meta : tab_meta.indexes) {
+            ihs_[ix_manager_->get_index_name(tab_name, index_meta.cols)] = ix_manager_->open_index(tab_name, index_meta.cols);
+        }
     }
 }
 
@@ -117,17 +126,25 @@ void SmManager::flush_meta() {
  */
 void SmManager::close_db() {
     std::string db_name = db_.name_;
-    if (!is_dir(db_name)) {
-        throw DatabaseExistsError(db_name);
-    }
-    if (chdir(db_name.c_str()) < 0) {
-        throw UnixError();
-    }
+
     std::ofstream ofs(DB_META_NAME);
     ofs << db_;
-    if (chdir("..") < 0) {
+    db_.name_.clear();
+    db_.tabs_.clear();
+
+    for (auto &entry : fhs_) {
+        rm_manager_->close_file(entry.second.get());
+    }
+	fhs_.clear();
+
+    for (auto &entry : ihs_) {
+        ix_manager_->close_index(entry.second.get());
+    }
+    ihs_.clear();
+    if (chdir("..") != 0) { //这里必须要用chdir，因为system会启动一个子进程
         throw UnixError();
     }
+
 }
 
 /**
@@ -135,6 +152,12 @@ void SmManager::close_db() {
  * @param {Context*} context 
  */
 void SmManager::show_tables(Context* context) {
+    if (sm_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "show_tables\n";
+        outfile.close();
+    } 
     std::fstream outfile;
     outfile.open("output.txt", std::ios::out | std::ios::app);
     outfile << "| Tables |\n";
@@ -181,6 +204,12 @@ void SmManager::desc_table(const std::string& tab_name, Context* context) {
  * @param {Context*} context 
  */
 void SmManager::create_table(const std::string& tab_name, const std::vector<ColDef>& col_defs, Context* context) {
+    if (sm_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "create_table " << tab_name << "\n";;
+        outfile.close();
+    }   
     if (db_.is_table(tab_name)) {
         throw TableExistsError(tab_name);
     }
@@ -214,7 +243,30 @@ void SmManager::create_table(const std::string& tab_name, const std::vector<ColD
  * @param {Context*} context
  */
 void SmManager::drop_table(const std::string& tab_name, Context* context) {
+    if (sm_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "drop_table " << tab_name << "\n";;
+        outfile.close();
+    } 
+    if (!db_.is_table(tab_name)) {
+        throw TableExistsError(tab_name);
+    }
+    TabMeta &tab = db_.get_table(tab_name);
     
+    for (auto &index_meta : tab.indexes) {
+        std::string name = ix_manager_->get_index_name(tab_name, index_meta.cols);
+        ix_manager_->close_index(ihs_[name].get());
+        ix_manager_->destroy_index(tab_name, index_meta.cols);
+        ihs_.erase(name);
+    }
+    db_.tabs_.erase(tab_name);
+
+    rm_manager_->close_file(fhs_[tab_name].get());
+    rm_manager_->destroy_file(tab_name);
+    fhs_.erase(tab_name);
+
+    flush_meta();
 }
 
 /**
@@ -224,16 +276,37 @@ void SmManager::drop_table(const std::string& tab_name, Context* context) {
  * @param {Context*} context
  */
 void SmManager::create_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    TabMeta info = db_.get_table(tab_name);
+    if (sm_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "creat_index " << tab_name << " ";
+        for (auto nm : col_names) outfile << nm << " ";
+        outfile << "\n";
+        outfile.close();
+    } 
+    std::string index_name = ix_manager_->get_index_name(tab_name, col_names);
+    if (ihs_.count(index_name)) return; //已经存在就不再进行加入
+
     std::vector<ColMeta> index_cols;
+    TabMeta &tab_meta = db_.tabs_[tab_name];
+    std::map<std::string, ColMeta> mp;
+    for (auto col_meta : tab_meta.cols) mp[col_meta.name] = col_meta;
+    for (auto col_name : col_names) index_cols.push_back(mp[col_name]);
 
-    for (auto col_name : col_names) {
-        auto col_meta = info.get_col(col_name);
-        index_cols.push_back(*col_meta);
-    }
     ix_manager_->create_index(tab_name, index_cols);
+    ihs_[index_name] = ix_manager_->open_index(tab_name, col_names);
+    
+    int col_tot_len = 0;
+    for (auto col_meta : index_cols) col_tot_len += col_meta.len;
+    IndexMeta index_meta = {
+        .tab_name = tab_name,
+        .col_tot_len = col_tot_len,
+        .col_num = col_names.size(),
+        .cols = index_cols
+    };
 
-    // ihs_.insert({index_name, ix_manager_->open_index(index_name, col_names)});
+    tab_meta.indexes.push_back(index_meta);
+    flush_meta();
 }
 
 /**
@@ -243,7 +316,24 @@ void SmManager::create_index(const std::string& tab_name, const std::vector<std:
  * @param {Context*} context
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<std::string>& col_names, Context* context) {
-    
+    if (sm_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "drop_index " << tab_name << " ";
+        for (auto nm : col_names) outfile << nm << " ";
+        outfile << "\n";
+        outfile.close();
+    } 
+    TabMeta &tab_meta = db_.tabs_[tab_name];
+    auto it = tab_meta.get_index_meta(col_names);
+    tab_meta.indexes.erase(it);
+
+    std::string index_name = ix_manager_->get_index_name(tab_name, col_names);
+    ix_manager_->close_index(ihs_[index_name].get());
+    ix_manager_->destroy_index(tab_name, col_names);
+
+    ihs_.erase(index_name);
+    flush_meta();
 }
 
 /**
@@ -253,5 +343,8 @@ void SmManager::drop_index(const std::string& tab_name, const std::vector<std::s
  * @param {Context*} context
  */
 void SmManager::drop_index(const std::string& tab_name, const std::vector<ColMeta>& cols, Context* context) {
-    
+    std::vector<std::string> col_names;
+    for (auto col_meta : cols) col_names.push_back(col_meta.name);
+
+    drop_index(tab_name, col_names, context);
 }

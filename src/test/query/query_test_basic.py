@@ -12,17 +12,18 @@ def get_output_name(index):
     return "../src/test/query/query_sql/basic_query_answer"+str(index)+".txt"
 
 def build():
-    # change dir to root
     os.chdir("../../../")
-    if os.path.exists("./build"):
-        os.system("rm -rf build")
-    os.mkdir("./build")
-    os.chdir("./build")
-    os.system("cmake ..")
+    if not os.path.exists("./build"):
+    # os.system("rm -rf build")
+        os.mkdir("./build")
+        os.chdir("./build")
+        os.system("cmake ..")
+    else:
+        os.chdir("./build")
+    # 直接 make，make 会自动判断是否需要重新编译
     os.system("make rmdb -j4")
     os.system("make query_test -j4")
     os.chdir("..")
-    
 
 def run():
     # dir is root/build
@@ -30,9 +31,6 @@ def run():
     score = 0.0
     
     for i in range(NUM_TESTS):
-        # if i == 0 :
-        #     continue
-        
         test_file = get_test_name(i + 1)
         database_name = "query_test_db"
 

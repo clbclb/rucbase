@@ -86,6 +86,8 @@ class RmFileHandle {
 
     RmPageHandle fetch_page_handle(int page_no) const;
 
+    int get_record_size() { return file_hdr_.record_size; }
+
    private:
     RmPageHandle create_page_handle();
 

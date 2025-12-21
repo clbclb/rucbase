@@ -20,13 +20,13 @@ static const bool binary_search = false;
 inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
     switch (type) {
         case TYPE_INT: {
-            int ia = *(int *)a;
-            int ib = *(int *)b;
+            int ia; memcpy(&ia, a, sizeof(int)); //这里没有确定是不是对齐的
+            int ib; memcpy(&ib, b, sizeof(int));
             return (ia < ib) ? -1 : ((ia > ib) ? 1 : 0);
         }
         case TYPE_FLOAT: {
-            float fa = *(float *)a;
-            float fb = *(float *)b;
+            float fa; memcpy(&fa, a, sizeof(float));
+            float fb; memcpy(&fb, b, sizeof(float));
             return (fa < fb) ? -1 : ((fa > fb) ? 1 : 0);
         }
         case TYPE_STRING:
@@ -35,7 +35,6 @@ inline int ix_compare(const char *a, const char *b, ColType type, int col_len) {
             throw InternalError("Unexpected data type");
     }
 }
-
 inline int ix_compare(const char* a, const char* b, const std::vector<ColType>& col_types, const std::vector<int>& col_lens) {
     int offset = 0;
     for(size_t i = 0; i < col_types.size(); ++i) {

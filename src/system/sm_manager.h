@@ -16,6 +16,8 @@ See the Mulan PSL v2 for more details. */
 #include "sm_meta.h"
 #include "common/context.h"
 
+const bool sm_debug = false;
+
 class Context;
 
 struct ColDef {
