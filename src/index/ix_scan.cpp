@@ -15,13 +15,14 @@ See the Mulan PSL v2 for more details. */
  * @todo 加上读锁（需要使用缓冲池得到page）
  */
 void IxScan::next() {
+    std::lock_guard<std::mutex> lock(ih_->root_latch_);
     assert(!is_end());
     IxNodeHandle *node = ih_->fetch_node(iid_.page_no);
     assert(node->is_leaf_page());
     assert(iid_.slot_no < node->get_size());
     // increment slot no
     iid_.slot_no++;
-    if (iid_.page_no != ih_->file_hdr_->last_leaf_ && iid_.slot_no == node->get_size()) {
+    if (iid_.slot_no == node->get_size()) {
         // go to next leaf
         iid_.slot_no = 0;
         iid_.page_no = node->get_next_leaf();

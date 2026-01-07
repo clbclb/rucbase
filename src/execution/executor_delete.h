@@ -40,6 +40,11 @@ class DeleteExecutor : public AbstractExecutor {
     std::unique_ptr<RmRecord> Next() override {
         auto buf = std::make_unique<char[]>(fh_->get_record_size());
         for (auto rid : rids_) {
+            if (!context_->lock_mgr_->lock_exclusive_on_record(context_->txn_, rid, fh_->GetFd()) ||
+                !context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd())) {;
+                throw TransactionAbortException(context_->txn_->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
+            }
+
             auto ori_rec = *fh_->get_record(rid, context_);
 
             fh_->delete_record(rid, context_);
@@ -49,6 +54,9 @@ class DeleteExecutor : public AbstractExecutor {
                 auto ih = sm_manager_->ihs_.at(sm_manager_->get_ix_manager()->get_index_name(tab_name_, index.cols)).get();
                 fill_buf(index, ori_rec.data, buf.get());
                 ih->delete_entry(buf.get(), nullptr);
+            }
+            if (context_->txn_ && context_->txn_->get_state() != TransactionState::ABORTED) {
+                context_->txn_->append_write_record(new WriteRecord(WType::DELETE_TUPLE, tab_.name, rid, ori_rec));
             }
         }
         return nullptr;

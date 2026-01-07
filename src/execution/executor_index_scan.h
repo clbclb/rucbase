@@ -64,19 +64,42 @@ class IndexScanExecutor : public AbstractExecutor {
         fed_conds_ = conds_;
     }
 
+    size_t tupleLen() const override { return len_; };
+    const std::vector<ColMeta> &cols() const override {
+        return cols_;
+    };
+
     std::string getType() override { return "IndexScanExecutor"; };
 
     void beginTuple() override {
+        if (!context_->lock_mgr_->lock_shared_on_table(context_->txn_, fh_->GetFd())) {
+            throw TransactionAbortException(context_->txn_->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
+        }
         
+        std::string index_name = sm_manager_->get_ix_manager()->get_index_name(index_meta_.tab_name, index_col_names_);
+        scan_ = std::make_unique<IxScan>(sm_manager_->ihs_[index_name].get(), Iid{-1, -1}, Iid{-1, -1}, sm_manager_->get_bpm());
+        if (!is_end() && !satisfy(Next(), cols_, conds_)) {
+            nextTuple();
+        }
     }
 
     void nextTuple() override {
-        
+        scan_->next();
+        while (!is_end() && !satisfy(Next(), cols_, conds_)) {
+            scan_->next();
+        }
     }
+
+    bool is_end() const override {
+        return scan_->is_end(); 
+    };
 
     std::unique_ptr<RmRecord> Next() override {
-        return nullptr;
+        Rid rid = scan_->rid();
+        return fh_->get_record(rid, context_);
     }
 
-    Rid &rid() override { return rid_; }
+    Rid &rid() override {
+        return rid_; 
+    }
 };

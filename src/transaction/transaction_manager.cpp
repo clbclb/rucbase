@@ -11,8 +11,13 @@ See the Mulan PSL v2 for more details. */
 #include "transaction_manager.h"
 #include "record/rm_file_handle.h"
 #include "system/sm_manager.h"
+#include "execution/executor_delete.h"
+#include "execution/executor_insert.h"
+#include "execution/executor_update.h"
 
 std::unordered_map<txn_id_t, Transaction *> TransactionManager::txn_map = {};
+
+const bool txn_debug = false;
 
 /**
  * @description: 事务的开始方法
@@ -26,8 +31,19 @@ Transaction * TransactionManager::begin(Transaction* txn, LogManager* log_manage
     // 2. 如果为空指针，创建新事务
     // 3. 把开始事务加入到全局事务表中
     // 4. 返回当前事务指针
+    if (txn_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "begin\n";
+        outfile.close();
+    }
     
-    return nullptr;
+    if (txn == nullptr) {
+        txn = new Transaction(next_txn_id_++);
+    }
+    txn_map[txn->get_transaction_id()] = txn;
+
+    return txn;
 }
 
 /**
@@ -43,6 +59,19 @@ void TransactionManager::commit(Transaction* txn, LogManager* log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
 
+    // assert(txn->get_write_set()->size() == 0);
+    if (txn_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "-------commit begin-------\n";
+        outfile << txn->get_write_set()->size() << "\n";
+        outfile << "-------commit end-------\n";
+        outfile.close();
+    }
+    txn->set_state(TransactionState::COMMITTED);
+    txn->get_write_set()->clear();
+    
+    lock_manager_->unlock(txn);
 }
 
 /**
@@ -58,4 +87,46 @@ void TransactionManager::abort(Transaction * txn, LogManager *log_manager) {
     // 4. 把事务日志刷入磁盘中
     // 5. 更新事务状态
     
+    // assert(txn->get_write_set()->size() == 0);
+    if (txn_debug) {
+        std::fstream outfile;
+        outfile.open("output.txt",std::ios::out | std::ios::app);
+        outfile << "-------abort begin-------\n";
+        outfile << txn->get_write_set()->size() << "\n";
+        outfile << "-------abort end-------\n";
+        outfile.close();
+    }
+
+    txn->set_state(TransactionState::ABORTED);
+
+    auto write_set = txn->get_write_set();
+    Context context_(lock_manager_, log_manager, txn);
+
+    while (write_set->size()) {
+        auto write_record = write_set->back(); 
+        auto rid = write_record->GetRid();
+        write_set->pop_back();
+
+        if (write_record->GetWriteType() == WType::INSERT_TUPLE) {
+            // sm_manager_->fhs_[write_record->GetTableName()]->delete_record(rid, nullptr);
+            DeleteExecutor exec(sm_manager_, write_record->GetTableName(), std::vector<Condition>(), std::vector<Rid>(1, rid), &context_);
+            exec.Next();
+        }
+        else if (write_record->GetWriteType() == WType::DELETE_TUPLE) {
+            auto record = write_record->GetRecord();
+            // sm_manager_->fhs_[write_record->GetTableName()]->insert_record(rid, record.data);
+            InsertExecutor exec(sm_manager_, write_record->GetTableName(), std::vector<Value>(), &context_, &record);
+            exec.setRid(rid);
+            exec.Next();
+        }
+        else if (write_record->GetWriteType() == WType::UPDATE_TUPLE) {
+            auto record = write_record->GetRecord();
+            // sm_manager_->fhs_[write_record->GetTableName()]->update_record(rid, record.data, nullptr);
+            UpdateExecutor exec(sm_manager_, write_record->GetTableName(), std::vector<SetClause>(), std::vector<Condition>(), 
+                                std::vector<Rid>(1, rid), &context_, &record);
+            exec.Next();
+        }
+    }
+    
+    lock_manager_->unlock(txn);
 }

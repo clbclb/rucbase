@@ -29,11 +29,13 @@ def get_output_name(test_name):
 def build():
     # root
     os.chdir("../../../")
-    if os.path.exists("./build"):
-        os.system("rm -rf build")
-    os.mkdir("./build")
-    os.chdir("./build")
-    os.system("cmake ..")
+    if not os.path.exists("./build"):
+    # os.system("rm -rf build")
+        os.mkdir("./build")
+        os.chdir("./build")
+        os.system("cmake ..")
+    else:
+        os.chdir("./build")
     os.system("make rmdb -j4")
     os.system("make concurrency_test -j4")
     os.chdir("..")

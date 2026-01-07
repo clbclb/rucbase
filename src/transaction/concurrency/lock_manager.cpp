@@ -17,9 +17,45 @@ See the Mulan PSL v2 for more details. */
  * @param {Rid&} rid 加锁的目标记录ID 记录所在的表的fd
  * @param {int} tab_fd
  */
-bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
-    
+
+
+const bool lock_map[5][5] = {
+    {1, 0, 1, 0, 0},
+    {0, 0, 0, 0, 0},
+    {1, 0, 1, 1, 1},
+    {0, 0, 1, 1, 0},
+    {0, 0, 1, 0, 0}
+};
+
+bool LockManager::work(Transaction *txn, LockDataId id, int type) {
+    if (!lock_num.count(id)) {
+        lock_num[id] = std::vector<int>(5, 0);
+    }
+    std::vector<int> &all_lock = lock_num[id];
+
+    if (!txn->get_lock_set()->count(id)) {
+        (*txn->get_lock_set())[id] = std::vector<int>(5, 0);
+    }
+    std::vector<int> &txn_lock = (*txn->get_lock_set())[id];
+
+    for (int i = 0; i < 5; i++) {
+        if (all_lock[i] - txn_lock[i] > 0 && !lock_map[type][i]) {
+            return false;
+        }
+    }
+
+    all_lock[type]++;
+    txn_lock[type]++;
     return true;
+}
+
+bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
+    std::scoped_lock lock{latch_};
+
+    LockDataId id(tab_fd, rid, LockDataType::RECORD);
+    int type = int(LockMode::SHARED);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -30,8 +66,12 @@ bool LockManager::lock_shared_on_record(Transaction* txn, const Rid& rid, int ta
  * @param {int} tab_fd 记录所在的表的fd
  */
 bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int tab_fd) {
+    std::scoped_lock lock{latch_};
 
-    return true;
+    LockDataId id(tab_fd, rid, LockDataType::RECORD);
+    int type = int(LockMode::EXLUCSIVE);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -41,8 +81,12 @@ bool LockManager::lock_exclusive_on_record(Transaction* txn, const Rid& rid, int
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
-    
-    return true;
+    std::scoped_lock lock{latch_};
+
+    LockDataId id(tab_fd, LockDataType::TABLE);
+    int type = int(LockMode::SHARED);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -52,8 +96,12 @@ bool LockManager::lock_shared_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
+    std::scoped_lock lock{latch_};
     
-    return true;
+    LockDataId id(tab_fd, LockDataType::TABLE);
+    int type = int(LockMode::EXLUCSIVE);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -63,8 +111,12 @@ bool LockManager::lock_exclusive_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
-    
-    return true;
+    std::scoped_lock lock{latch_};
+
+    LockDataId id(tab_fd, LockDataType::TABLE);
+    int type = int(LockMode::INTENTION_SHARED);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -74,8 +126,12 @@ bool LockManager::lock_IS_on_table(Transaction* txn, int tab_fd) {
  * @param {int} tab_fd 目标表的fd
  */
 bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
+    std::scoped_lock lock{latch_};
     
-    return true;
+    LockDataId id(tab_fd, LockDataType::TABLE);
+    int type = int(LockMode::INTENTION_EXCLUSIVE);
+
+    return work(txn, id, type);
 }
 
 /**
@@ -84,7 +140,25 @@ bool LockManager::lock_IX_on_table(Transaction* txn, int tab_fd) {
  * @param {Transaction*} txn 要释放锁的事务对象指针
  * @param {LockDataId} lock_data_id 要释放的锁ID
  */
-bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
-   
+// bool LockManager::unlock(Transaction* txn, LockDataId lock_data_id) {
+bool LockManager::unlock(Transaction* txn) {
+    std::scoped_lock lock{latch_};
+
+    //因为是严格2PL，因此undo里面就是直接把整个事务的指针全部释放掉
+
+    auto lock_set = txn->get_lock_set();
+    for (auto [id, txn_lock] : *lock_set) {
+        std::vector<int> &all_lock = lock_num[id];
+        bool all_zero = 1;
+        for (int i = 0; i < 5; i++) {
+            all_lock[i] -= txn_lock[i];
+            all_zero &= !all_lock[i];
+        }
+        if (all_zero) {
+            lock_num.erase(id);
+        }
+    }
+    lock_set->clear();
+    
     return true;
 }

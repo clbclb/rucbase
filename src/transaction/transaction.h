@@ -24,7 +24,8 @@ class Transaction {
     explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SERIALIZABLE)
         : state_(TransactionState::DEFAULT), isolation_level_(isolation_level), txn_id_(txn_id) {
         write_set_ = std::make_shared<std::deque<WriteRecord *>>();
-        lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
+        // lock_set_ = std::make_shared<std::unordered_set<LockDataId>>();
+        lock_set_ = std::make_shared<std::unordered_map<LockDataId, std::vector<int>>>();
         index_latch_page_set_ = std::make_shared<std::deque<Page *>>();
         index_deleted_page_set_ = std::make_shared<std::deque<Page*>>();
         prev_lsn_ = INVALID_LSN;
@@ -60,7 +61,8 @@ class Transaction {
     inline std::shared_ptr<std::deque<Page*>> get_index_latch_page_set() { return index_latch_page_set_; }
     inline void append_index_latch_page_set(Page* page) { index_latch_page_set_->push_back(page); }
 
-    inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
+    // inline std::shared_ptr<std::unordered_set<LockDataId>> get_lock_set() { return lock_set_; }
+    inline std::shared_ptr<std::unordered_map<LockDataId, std::vector<int>>> get_lock_set() { return lock_set_; }
 
    private:
     bool txn_mode_;                   // 用于标识当前事务为显式事务还是单条SQL语句的隐式事务
@@ -72,7 +74,8 @@ class Transaction {
     timestamp_t start_ts_;            // 事务的开始时间戳
 
     std::shared_ptr<std::deque<WriteRecord *>> write_set_;  // 事务包含的所有写操作
-    std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;  // 事务申请的所有锁
+    // std::shared_ptr<std::unordered_set<LockDataId>> lock_set_;  // 事务申请的所有锁
+    std::shared_ptr<std::unordered_map<LockDataId, std::vector<int>>> lock_set_;
     std::shared_ptr<std::deque<Page*>> index_latch_page_set_;          // 维护事务执行过程中加锁的索引页面
     std::shared_ptr<std::deque<Page*>> index_deleted_page_set_;    // 维护事务执行过程中删除的索引页面
 };

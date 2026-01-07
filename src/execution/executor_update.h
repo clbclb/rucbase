@@ -26,10 +26,11 @@ class UpdateExecutor : public AbstractExecutor {
     std::string tab_name_;
     std::vector<SetClause> set_clauses_;
     SmManager *sm_manager_;
+    RmRecord *rec_;
 
    public:
     UpdateExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<SetClause> set_clauses,
-                   std::vector<Condition> conds, std::vector<Rid> rids, Context *context) {
+                   std::vector<Condition> conds, std::vector<Rid> rids, Context *context, RmRecord *rec = nullptr) {
         sm_manager_ = sm_manager;
         tab_name_ = tab_name;
         set_clauses_ = set_clauses;
@@ -38,6 +39,7 @@ class UpdateExecutor : public AbstractExecutor {
         conds_ = conds;
         rids_ = rids;
         context_ = context; 
+        rec_ = rec;
     }
     ~UpdateExecutor() override {}
 
@@ -60,7 +62,6 @@ class UpdateExecutor : public AbstractExecutor {
                 outfile << clause.lhs.col_name << "\n";
             }
             outfile.close();
-            //I think rids_ may not be useful, because they are 0 0 in the test
         }
         
         std::vector<int> len_vec, offset_vec;
@@ -74,19 +75,31 @@ class UpdateExecutor : public AbstractExecutor {
         }
 
         auto buf = std::make_unique<char[]>(fh_->get_record_size());
+
         for (auto rid : rids_) {
         // auto scan_ = std::make_unique<RmScan>(fh_);
         // while (!scan_->is_end()) {
             // Rid rid = scan_->rid(); scan_->next();
             // if (!satisfy(fh_->get_record(rid, context_), tab_.cols, conds_)) continue;
+
+            if (!context_->lock_mgr_->lock_exclusive_on_record(context_->txn_, rid, fh_->GetFd()) ||
+                !context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd())) {
+                throw TransactionAbortException(context_->txn_->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
+            }
+
             auto ori_rec = *fh_->get_record(rid, context_);
             auto rec = ori_rec;
 
             //更新record
-            int i = 0;
-            for (auto &clause : set_clauses_) {
-                memcpy(rec.data + offset_vec[i], clause.rhs.raw->data, len_vec[i]);
-                i++;
+            if (rec_ == nullptr) {
+                int i = 0;
+                for (auto &clause : set_clauses_) {
+                    memcpy(rec.data + offset_vec[i], clause.rhs.raw->data, len_vec[i]);
+                    i++;
+                }
+            }
+            else {
+                rec = *rec_;
             }
             fh_->update_record(rid, rec.data, context_);
 
@@ -98,6 +111,9 @@ class UpdateExecutor : public AbstractExecutor {
 
                 fill_buf(index, rec.data, buf.get());
                 ih->insert_entry(buf.get(), rid, nullptr);
+            }
+            if (context_->txn_ && context_->txn_->get_state() != TransactionState::ABORTED) {
+                context_->txn_->append_write_record(new WriteRecord(WType::UPDATE_TUPLE, tab_.name, rid, ori_rec));
             }
         }
         return nullptr;

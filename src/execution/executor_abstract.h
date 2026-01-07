@@ -130,4 +130,35 @@ class AbstractExecutor {
             offset += col.len;
         }
     }
+
+    void abort(Transaction * txn, LogManager *log_manager, SmManager *sm_manager_, LockManager *lock_manager_) {
+        // Todo:
+        // 1. 回滚所有写操作
+        // 2. 释放所有锁
+        // 3. 清空事务相关资源，eg.锁集
+        // 4. 把事务日志刷入磁盘中
+        // 5. 更新事务状态
+
+        auto write_set = txn->get_write_set();
+
+        while (write_set->size()) {
+            auto write_record = write_set->back(); 
+            auto rid = write_record->GetRid();
+            write_set->pop_back();
+
+            if (write_record->GetWriteType() == WType::INSERT_TUPLE) {
+                sm_manager_->fhs_[write_record->GetTableName()]->delete_record(rid, nullptr);
+            }
+            else if (write_record->GetWriteType() == WType::DELETE_TUPLE) {
+                auto record = write_record->GetRecord();
+                sm_manager_->fhs_[write_record->GetTableName()]->insert_record(rid, record.data);
+            }
+            else if (write_record->GetWriteType() == WType::UPDATE_TUPLE) {
+                auto record = write_record->GetRecord();
+                sm_manager_->fhs_[write_record->GetTableName()]->update_record(rid, record.data, nullptr);
+            }
+        }
+        txn->set_state(TransactionState::ABORTED);
+        lock_manager_->unlock(txn);
+    }
 };

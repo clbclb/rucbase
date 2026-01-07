@@ -23,36 +23,53 @@ class InsertExecutor : public AbstractExecutor {
     std::string tab_name_;          // 表名称
     Rid rid_;                       // 插入的位置，由于系统默认插入时不指定位置，因此当前rid_在插入后才赋值
     SmManager *sm_manager_;
+    RmRecord *rec_;
 
    public:
-    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Value> values, Context *context) {
+    InsertExecutor(SmManager *sm_manager, const std::string &tab_name, std::vector<Value> values, Context *context, RmRecord *rec = nullptr) {
         sm_manager_ = sm_manager;
         tab_ = sm_manager_->db_.get_table(tab_name);
         values_ = values;
         tab_name_ = tab_name;
-        if (values.size() != tab_.cols.size()) {
+        if (rec == nullptr && values.size() != tab_.cols.size()) {
             throw InvalidValueCountError();
         }
         fh_ = sm_manager_->fhs_.at(tab_name).get();
         context_ = context;
+        rid_ = {-1, -1};
+        rec_ = rec;
     };
+
+    void setRid(Rid rid) { rid_ = rid; }
 
     std::string getType() override { return "InsertExecutor"; };
 
     std::unique_ptr<RmRecord> Next() override {
-        // Make record buffer
-        RmRecord rec(fh_->get_file_hdr().record_size);
-        for (size_t i = 0; i < values_.size(); i++) {
-            auto &col = tab_.cols[i];
-            auto &val = values_[i];
-            if (col.type != val.type) {
-                throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
-            }
-            val.init_raw(col.len);
-            memcpy(rec.data + col.offset, val.raw->data, col.len);
+        if (!context_->lock_mgr_->lock_IX_on_table(context_->txn_, fh_->GetFd())) {
+            throw TransactionAbortException(context_->txn_->get_transaction_id(), AbortReason::DEADLOCK_PREVENTION);
         }
+        
+        // Make record buffer
+        RmRecord rec;
+        if (rec_ == nullptr) {
+            rec = RmRecord(fh_->get_file_hdr().record_size);
+            for (size_t i = 0; i < values_.size(); i++) {
+                auto &col = tab_.cols[i];
+                auto &val = values_[i];
+                if (col.type != val.type) {
+                    throw IncompatibleTypeError(coltype2str(col.type), coltype2str(val.type));
+                }
+                val.init_raw(col.len);
+                memcpy(rec.data + col.offset, val.raw->data, col.len);
+            }
+        }
+        else {
+            rec = *rec_;
+        }
+        
         // Insert into record file
-        rid_ = fh_->insert_record(rec.data, context_);
+        if (rid_.page_no != -1) fh_->insert_record(rid_, rec.data);
+        else rid_ = fh_->insert_record(rec.data, context_);
         
         // Insert into index
         for(size_t i = 0; i < tab_.indexes.size(); ++i) {
@@ -66,6 +83,10 @@ class InsertExecutor : public AbstractExecutor {
             }
             ih->insert_entry(key, rid_, context_->txn_);
         }
+        if (context_->txn_ && context_->txn_->get_state() != TransactionState::ABORTED) {
+            context_->txn_->append_write_record(new WriteRecord(WType::INSERT_TUPLE, tab_.name, rid_));
+        }
+        
         return nullptr;
     }
     Rid &rid() override { return rid_; }
